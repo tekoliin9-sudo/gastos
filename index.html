@@ -43,6 +43,15 @@ legend,.lbl{font-size:13px;color:var(--muted);margin-bottom:6px;padding:0}
 .field input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 .primary{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:17px}
 h2{font-size:15px;margin:26px 0 10px}
+.mnav{display:flex;align-items:center;gap:4px}
+.mnav .link{font-size:22px;line-height:1;padding:2px 8px}
+.mnav .link:disabled{opacity:.3;cursor:default}
+.cs{padding:10px 0;border-bottom:1px solid var(--line)}
+.cs:last-child{border:0}
+.cs>div:first-child{display:flex;justify-content:space-between;gap:12px}
+.cs b{font-variant-numeric:tabular-nums}
+.bar{height:6px;border-radius:3px;background:var(--line);margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
 .list{padding:4px 16px}
 .row{display:flex;justify-content:space-between;gap:12px;width:100%;padding:12px 0;border:0;border-bottom:1px solid var(--line);background:none;text-align:left}
 .row:last-child{border:0}
@@ -66,7 +75,7 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
 <body>
 <main class="app">
   <header>
-    <div><div class="month" id="month"></div><div class="total" id="total">$0.00</div></div>
+    <div><div class="mnav"><button class="link" id="prev" type="button" aria-label="Mes anterior">‹</button><span class="month" id="month"></span><button class="link" id="next" type="button" aria-label="Mes siguiente">›</button></div><div class="total" id="total">$0.00</div></div>
     <button class="link" id="open-cfg" type="button">Ajustes</button>
   </header>
   <button class="sync" id="sync" type="button" data-s="setup"><i></i><span id="sync-t">Configura la conexión</span></button>
@@ -80,7 +89,10 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
     <button class="primary" type="submit">Guardar gasto</button>
   </form>
 
-  <h2>Últimos gastos (toca uno para editarlo)</h2>
+  <h2>Por categoría</h2>
+  <div class="list" id="cats-sum"></div>
+
+  <h2>Gastos del mes (toca uno para editarlo)</h2>
   <div class="list" id="list"></div>
 </main>
 
@@ -126,6 +138,8 @@ let items = load(K_ITEMS, []), cfg = load(K_CFG, {url:'', token:''}), syncing = 
 const pad = n => String(n).padStart(2, '0');
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
 const money = n => n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+const curYM = () => today().slice(0, 7);
+let viewYM = curYM();
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
 const toast = t => { const e = $('#toast'); e.textContent = t; e.classList.add('show'); setTimeout(() => e.classList.remove('show'), 2200); };
 
@@ -140,13 +154,28 @@ function choices(box, name, values, checked) {
 const val = name => document.querySelector('input[name=' + name + ']:checked').value;
 
 function render() {
-  const now = new Date(), ym = `${now.getFullYear()}-${pad(now.getMonth()+1)}`;
-  $('#month').textContent = now.toLocaleDateString(undefined, {month:'long', year:'numeric'});
-  const live = items.filter(i => !i.deleted);
-  $('#total').textContent = '$' + money(live.filter(i => i.date.startsWith(ym)).reduce((t, i) => t + i.amount, 0));
+  const ym = viewYM, [vy, vm] = ym.split('-');
+  $('#month').textContent = new Date(+vy, +vm - 1, 1).toLocaleDateString(undefined, {month:'long', year:'numeric'});
+  $('#next').disabled = ym >= curYM();
+  const inMonth = items.filter(i => !i.deleted && i.date.startsWith(ym)).sort((a, b) => b.date.localeCompare(a.date));
+  const sum = inMonth.reduce((t, i) => t + i.amount, 0);
+  $('#total').textContent = '$' + money(sum);
+  const by = {};
+  inMonth.forEach(i => { by[i.category] = (by[i.category] || 0) + i.amount; });
+  const cs = $('#cats-sum'); cs.innerHTML = '';
+  const rows = Object.entries(by).sort((a, b) => b[1] - a[1]);
+  if (!rows.length) cs.innerHTML = '<div class="empty">Sin gastos en este mes.</div>';
+  rows.forEach(([c, v]) => {
+    const pct = Math.round(v / sum * 100), d = document.createElement('div'); d.className = 'cs';
+    d.innerHTML = '<div><span></span><b></b></div><div class="bar"><i></i></div>';
+    d.querySelector('span').textContent = c + ' · ' + pct + '%';
+    d.querySelector('b').textContent = '$' + money(v);
+    d.querySelector('i').style.width = pct + '%';
+    cs.appendChild(d);
+  });
   const list = $('#list'); list.innerHTML = '';
-  if (!live.length) list.innerHTML = '<div class="empty">Aún no hay gastos. Registra el primero arriba.</div>';
-  live.slice(0, 30).forEach(i => {
+  if (!inMonth.length) list.innerHTML = '<div class="empty">Sin gastos en este mes.</div>';
+  inMonth.slice(0, 50).forEach(i => {
     const r = document.createElement('button'); r.type = 'button'; r.className = 'row';
     const a = document.createElement('span');
     a.innerHTML = '<span></span><small></small>';
@@ -192,7 +221,7 @@ $('#f').addEventListener('submit', e => {
     note: $('#note').value.trim(), method: val('method'), createdAt: new Date().toISOString(), synced: false});
   store(K_ITEMS, items);
   $('#amount').value = ''; $('#note').value = ''; $('#date').value = today();
-  render(); toast('Gasto guardado'); $('#amount').focus(); sync();
+  viewYM = items[0].date.slice(0, 7); render(); toast('Gasto guardado'); $('#amount').focus(); sync();
 });
 
 const dlg = $('#cfg');
@@ -233,8 +262,11 @@ $('#edit-f').addEventListener('submit', e => {
   if (!(n > 0)) { e.preventDefault(); toast('Escribe un monto mayor a 0'); return; }
   Object.assign(editing, {amount: n, category: val('ecat'), note: $('#e-note').value.trim(), method: val('emethod'),
     date: $('#e-date').value || editing.date, synced: false, rev: (editing.rev || 0) + 1});
-  store(K_ITEMS, items); render(); toast('Cambios guardados'); sync();
+  viewYM = editing.date.slice(0, 7); store(K_ITEMS, items); render(); toast('Cambios guardados'); sync();
 });
+const shift = d => { const [y, m] = viewYM.split('-').map(Number); const t = new Date(y, m - 1 + d, 1); viewYM = t.getFullYear() + '-' + pad(t.getMonth() + 1); render(); };
+$('#prev').onclick = () => shift(-1);
+$('#next').onclick = () => shift(1);
 $('#sync').onclick = sync;
 addEventListener('online', sync); addEventListener('offline', render);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
