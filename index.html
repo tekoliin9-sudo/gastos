@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1D4ED8">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Gastos</title>
+<style>
+:root{color-scheme:light dark;--bg:#EEF2F5;--surface:#fff;--ink:#12202A;--muted:#5B6B76;--line:#D5DEE4;--accent:#1D4ED8;--on-accent:#fff;--ok:#1B7F55;--warn:#A8501C}
+@media(prefers-color-scheme:dark){:root{--bg:#0F171D;--surface:#17222A;--ink:#E8EFF3;--muted:#93A4AF;--line:#26343D;--accent:#6C93FF;--on-accent:#0B1220;--ok:#4CC38A;--warn:#F0A070}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.app{max-width:480px;margin:0 auto;padding:18px 16px 48px}
+header{display:flex;justify-content:space-between;align-items:flex-start}
+.month{color:var(--muted);font-size:14px;text-transform:capitalize}
+.total{font-size:36px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.link{background:none;border:0;color:var(--accent);padding:6px 2px;font-weight:600}
+.sync{display:inline-flex;align-items:center;gap:8px;margin:10px 0 20px;padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface);font-size:13px;color:var(--muted)}
+.sync i{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.sync[data-s=pending] i,.sync[data-s=offline] i{background:var(--warn)}
+.sync[data-s=error] i{background:#D23B3B}
+.sync[data-s=setup] i{background:var(--muted)}
+form.card,.list{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px}
+.amount{display:flex;align-items:baseline;gap:6px;border-bottom:2px solid var(--line);padding-bottom:6px;margin-bottom:18px}
+.amount:focus-within{border-color:var(--accent)}
+.amount span{font-size:30px;color:var(--muted)}
+.amount input{width:100%;border:0;background:none;font-size:48px;font-weight:700;font-variant-numeric:tabular-nums;padding:0;outline:0}
+fieldset{border:0;padding:0;margin:0 0 16px}
+legend,.lbl{font-size:13px;color:var(--muted);margin-bottom:6px;padding:0}
+.opts{display:flex;flex-wrap:wrap;gap:8px}
+.opts label{position:relative}
+.opts input{position:absolute;opacity:0;inset:0}
+.opts span{display:block;padding:8px 14px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.opts input:checked+span{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.opts input:focus-visible+span{outline:3px solid var(--accent);outline-offset:2px}
+.field{display:block;margin-bottom:16px}
+.field input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.primary{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:17px}
+h2{font-size:15px;margin:26px 0 10px}
+.list{padding:4px 16px}
+.row{display:flex;justify-content:space-between;gap:12px;width:100%;padding:12px 0;border:0;border-bottom:1px solid var(--line);background:none;text-align:left}
+.row:last-child{border:0}
+.row small{display:block;color:var(--muted)}
+.row b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .pend{color:var(--warn)}
+.empty{color:var(--muted);padding:14px 0}
+dialog{border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);width:min(440px,92vw);padding:20px}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
+.btns{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.btns button{padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:none}
+.btns .ok{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btns .danger{color:#D23B3B;border-color:#D23B3B;margin-right:auto}
+#msg{min-height:20px;font-size:14px;margin:0 0 10px}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.show{opacity:1}
+@media(prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+<main class="app">
+  <header>
+    <div><div class="month" id="month"></div><div class="total" id="total">$0.00</div></div>
+    <button class="link" id="open-cfg" type="button">Ajustes</button>
+  </header>
+  <button class="sync" id="sync" type="button" data-s="setup"><i></i><span id="sync-t">Configura la conexión</span></button>
+
+  <form class="card" id="f" autocomplete="off">
+    <label class="amount"><span>$</span><input id="amount" inputmode="decimal" placeholder="0.00" aria-label="Monto" required></label>
+    <fieldset><legend>Categoría</legend><div class="opts" id="cats"></div></fieldset>
+    <label class="field"><span class="lbl">Descripción</span><input id="note" maxlength="80" placeholder="Ej. café y pan"></label>
+    <fieldset><legend>Pago</legend><div class="opts" id="methods"></div></fieldset>
+    <label class="field"><span class="lbl">Fecha</span><input id="date" type="date" required></label>
+    <button class="primary" type="submit">Guardar gasto</button>
+  </form>
+
+  <h2>Últimos gastos (toca uno para editarlo)</h2>
+  <div class="list" id="list"></div>
+</main>
+
+<dialog id="cfg">
+  <form method="dialog" id="cfg-f">
+    <p>Pega la URL de tu implementación de Apps Script y el token que definiste en el script.</p>
+    <label class="field"><span class="lbl">URL de la aplicación web</span><input id="url" type="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <label class="field"><span class="lbl">Token</span><input id="token" type="password" autocomplete="off"></label>
+    <div id="msg" role="status"></div>
+    <div class="btns">
+      <button type="button" id="test">Probar conexión</button>
+      <button type="button" id="close">Cerrar</button>
+      <button class="ok" type="submit">Guardar</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="edit">
+  <form method="dialog" id="edit-f">
+    <label class="amount"><span>$</span><input id="e-amount" inputmode="decimal" aria-label="Monto" required></label>
+    <fieldset><legend>Categoría</legend><div class="opts" id="e-cats"></div></fieldset>
+    <label class="field"><span class="lbl">Descripción</span><input id="e-note" maxlength="80"></label>
+    <fieldset><legend>Pago</legend><div class="opts" id="e-methods"></div></fieldset>
+    <label class="field"><span class="lbl">Fecha</span><input id="e-date" type="date" required></label>
+    <div class="btns">
+      <button type="button" class="danger" id="e-del">Eliminar</button>
+      <button type="button" id="e-cancel">Cancelar</button>
+      <button class="ok" type="submit">Guardar cambios</button>
+    </div>
+  </form>
+</dialog>
+<div id="toast" role="status"></div>
+
+<script>
+(() => {
+const CATEGORIES = ['Comida','Transporte','Casa','Salud','Ocio','Compras','Servicios','Otros'];
+const METHODS = ['Efectivo','Tarjeta','Transferencia'];
+const K_ITEMS = 'gastos.items.v1', K_CFG = 'gastos.cfg.v1';
+const $ = s => document.querySelector(s);
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+let items = load(K_ITEMS, []), cfg = load(K_CFG, {url:'', token:''}), syncing = false, failed = false;
+
+const pad = n => String(n).padStart(2, '0');
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+const money = n => n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+const uid = () => crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+const toast = t => { const e = $('#toast'); e.textContent = t; e.classList.add('show'); setTimeout(() => e.classList.remove('show'), 2200); };
+
+function choices(box, name, values, checked) {
+  values.forEach(v => {
+    const l = document.createElement('label');
+    l.innerHTML = '<input type="radio" name="' + name + '" value="' + v + '"><span>' + v + '</span>';
+    if (v === checked) l.firstChild.checked = true;
+    box.appendChild(l);
+  });
+}
+const val = name => document.querySelector('input[name=' + name + ']:checked').value;
+
+function render() {
+  const now = new Date(), ym = `${now.getFullYear()}-${pad(now.getMonth()+1)}`;
+  $('#month').textContent = now.toLocaleDateString(undefined, {month:'long', year:'numeric'});
+  const live = items.filter(i => !i.deleted);
+  $('#total').textContent = '$' + money(live.filter(i => i.date.startsWith(ym)).reduce((t, i) => t + i.amount, 0));
+  const list = $('#list'); list.innerHTML = '';
+  if (!live.length) list.innerHTML = '<div class="empty">Aún no hay gastos. Registra el primero arriba.</div>';
+  live.slice(0, 30).forEach(i => {
+    const r = document.createElement('button'); r.type = 'button'; r.className = 'row';
+    const a = document.createElement('span');
+    a.innerHTML = '<span></span><small></small>';
+    a.firstChild.textContent = i.note || i.category;
+    a.lastChild.textContent = i.category + ' · ' + i.method + ' · ' + i.date;
+    const b = document.createElement('b'); b.textContent = '$' + money(i.amount);
+    if (!i.synced) b.classList.add('pend');
+    r.append(a, b); r.onclick = () => openEdit(i); list.appendChild(r);
+  });
+  const pending = items.filter(i => !i.synced).length, el = $('#sync');
+  let s = 'ok', t = 'Todo sincronizado';
+  if (!cfg.url) { s = 'setup'; t = 'Configura la conexión'; }
+  else if (failed) { s = 'error'; t = 'Error al sincronizar · toca para reintentar'; }
+  else if (!navigator.onLine && pending) { s = 'offline'; t = 'Sin conexión · ' + pending + ' pendientes'; }
+  else if (pending) { s = 'pending'; t = pending + ' pendientes · toca para sincronizar'; }
+  el.dataset.s = s; $('#sync-t').textContent = t;
+}
+
+async function sync() {
+  if (syncing || !cfg.url || !navigator.onLine) return render();
+  syncing = true; failed = false;
+  try {
+    let batch;
+    while ((batch = items.filter(i => !i.synced).slice(0, 50)).length) {
+      const revs = batch.map(i => i.rev || 0);
+      const res = await fetch(cfg.url, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({token: cfg.token, items: batch})});
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Error');
+      batch.forEach((i, k) => { if ((i.rev || 0) === revs[k]) i.synced = true; });
+      items = items.filter(i => !(i.deleted && i.synced));
+      store(K_ITEMS, items);
+    }
+  } catch (e) { failed = true; }
+  syncing = false; render();
+}
+
+$('#f').addEventListener('submit', e => {
+  e.preventDefault();
+  const n = Math.round(parseFloat(String($('#amount').value).replace(',', '.')) * 100) / 100;
+  if (!(n > 0)) { toast('Escribe un monto mayor a 0'); $('#amount').focus(); return; }
+  items.unshift({id: uid(), date: $('#date').value || today(), amount: n, category: val('cat'),
+    note: $('#note').value.trim(), method: val('method'), createdAt: new Date().toISOString(), synced: false});
+  store(K_ITEMS, items);
+  $('#amount').value = ''; $('#note').value = ''; $('#date').value = today();
+  render(); toast('Gasto guardado'); $('#amount').focus(); sync();
+});
+
+const dlg = $('#cfg');
+$('#open-cfg').onclick = () => { $('#url').value = cfg.url; $('#token').value = cfg.token; $('#msg').textContent = ''; dlg.showModal(); };
+$('#close').onclick = () => dlg.close();
+$('#cfg-f').addEventListener('submit', () => {
+  cfg = {url: $('#url').value.trim(), token: $('#token').value.trim()};
+  store(K_CFG, cfg); failed = false; render(); sync();
+});
+$('#test').onclick = async () => {
+  const url = $('#url').value.trim(), tk = $('#token').value.trim(), m = $('#msg');
+  if (!url) { m.textContent = 'Falta la URL.'; return; }
+  m.textContent = 'Probando…';
+  try {
+    const r = await fetch(url + (url.includes('?') ? '&' : '?') + 'action=ping&token=' + encodeURIComponent(tk));
+    const d = await r.json();
+    m.textContent = d.ok ? 'Conexión correcta.' : 'El token no coincide con el del script.';
+  } catch { m.textContent = 'No hubo respuesta. Revisa la URL y que el acceso sea «Cualquier persona».'; }
+};
+let editing = null;
+function openEdit(i) {
+  editing = i;
+  $('#e-amount').value = i.amount; $('#e-note').value = i.note; $('#e-date').value = i.date;
+  const c = document.querySelector('input[name=ecat][value="' + i.category + '"]'); if (c) c.checked = true;
+  const m = document.querySelector('input[name=emethod][value="' + i.method + '"]'); if (m) m.checked = true;
+  $('#e-del').textContent = 'Eliminar'; $('#e-del').dataset.arm = '';
+  $('#edit').showModal();
+}
+$('#e-cancel').onclick = () => $('#edit').close();
+$('#e-del').onclick = e => {
+  const b = e.currentTarget;
+  if (!b.dataset.arm) { b.dataset.arm = '1'; b.textContent = 'Toca otra vez para eliminar'; return; }
+  Object.assign(editing, {deleted: true, synced: false, rev: (editing.rev || 0) + 1});
+  store(K_ITEMS, items); $('#edit').close(); render(); toast('Gasto eliminado'); sync();
+};
+$('#edit-f').addEventListener('submit', e => {
+  const n = Math.round(parseFloat(String($('#e-amount').value).replace(',', '.')) * 100) / 100;
+  if (!(n > 0)) { e.preventDefault(); toast('Escribe un monto mayor a 0'); return; }
+  Object.assign(editing, {amount: n, category: val('ecat'), note: $('#e-note').value.trim(), method: val('emethod'),
+    date: $('#e-date').value || editing.date, synced: false, rev: (editing.rev || 0) + 1});
+  store(K_ITEMS, items); render(); toast('Cambios guardados'); sync();
+});
+$('#sync').onclick = sync;
+addEventListener('online', sync); addEventListener('offline', render);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
+
+choices($('#cats'), 'cat', CATEGORIES, CATEGORIES[0]);
+choices($('#methods'), 'method', METHODS, METHODS[1]);
+choices($('#e-cats'), 'ecat', CATEGORIES);
+choices($('#e-methods'), 'emethod', METHODS);
+$('#date').value = today();
+render(); sync();
+if (!cfg.url) dlg.showModal();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+})();
+</script>
+</body>
+</html>
