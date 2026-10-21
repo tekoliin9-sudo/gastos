@@ -42,6 +42,8 @@ legend,.lbl{font-size:13px;color:var(--muted);margin-bottom:6px;padding:0}
 .field{display:block;margin-bottom:16px}
 .field input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 .primary{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:17px}
+.today{color:var(--muted);font-size:15px;margin-top:2px}
+.today b{color:var(--ink);font-variant-numeric:tabular-nums}
 h2{font-size:15px;margin:26px 0 10px}
 .mnav{display:flex;align-items:center;gap:4px}
 .mnav .link{font-size:22px;line-height:1;padding:2px 8px}
@@ -75,7 +77,8 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
 <body>
 <main class="app">
   <header>
-    <div><div class="mnav"><button class="link" id="prev" type="button" aria-label="Mes anterior">‹</button><span class="month" id="month"></span><button class="link" id="next" type="button" aria-label="Mes siguiente">›</button></div><div class="total" id="total">$0.00</div></div>
+    <div><div class="mnav"><button class="link" id="prev" type="button" aria-label="Mes anterior">‹</button><span class="month" id="month"></span><button class="link" id="next" type="button" aria-label="Mes siguiente">›</button></div><div class="total" id="total">$0.00</div>
+      <div class="today">Hoy: <b id="today">$0.00</b></div></div>
     <button class="link" id="open-cfg" type="button">Ajustes</button>
   </header>
   <button class="sync" id="sync" type="button" data-s="setup"><i></i><span id="sync-t">Configura la conexión</span></button>
@@ -160,6 +163,7 @@ function render() {
   const inMonth = items.filter(i => !i.deleted && i.date.startsWith(ym)).sort((a, b) => b.date.localeCompare(a.date));
   const sum = inMonth.reduce((t, i) => t + i.amount, 0);
   $('#total').textContent = '$' + money(sum);
+  $('#today').textContent = '$' + money(items.filter(i => !i.deleted && i.date === today()).reduce((t, i) => t + i.amount, 0));
   const by = {};
   inMonth.forEach(i => { by[i.category] = (by[i.category] || 0) + i.amount; });
   const cs = $('#cats-sum'); cs.innerHTML = '';
