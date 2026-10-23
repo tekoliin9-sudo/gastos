@@ -48,6 +48,10 @@ legend,.lbl{font-size:13px;color:var(--muted);margin-bottom:6px;padding:0}
 .day span{text-transform:capitalize}
 .day b{font-variant-numeric:tabular-nums}
 .dcat{color:var(--muted);font-size:13px;padding-bottom:4px}
+[hidden]{display:none!important}
+.tabs{display:flex;gap:4px;padding:4px;margin-bottom:16px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.tabs button{flex:1;padding:10px;border:0;border-radius:9px;background:none;font-weight:600;color:var(--muted)}
+.tabs button[aria-selected=true]{background:var(--accent);color:var(--on-accent)}
 h2{font-size:15px;margin:26px 0 10px}
 .mnav{display:flex;align-items:center;gap:4px}
 .mnav .link{font-size:22px;line-height:1;padding:2px 8px}
@@ -87,6 +91,12 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
   </header>
   <button class="sync" id="sync" type="button" data-s="setup"><i></i><span id="sync-t">Configura la conexión</span></button>
 
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" id="t-hoy" aria-selected="true">Hoy</button>
+    <button type="button" role="tab" id="t-hist" aria-selected="false">Historial</button>
+  </div>
+
+  <section id="p-hoy">
   <form class="card" id="f" autocomplete="off">
     <label class="amount"><span>$</span><input id="amount" inputmode="decimal" placeholder="0.00" aria-label="Monto" required></label>
     <fieldset><legend>Categoría</legend><div class="opts" id="cats"></div></fieldset>
@@ -96,11 +106,17 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
     <button class="primary" type="submit">Guardar gasto</button>
   </form>
 
-  <h2>Por categoría</h2>
+  <h2>Gastos de hoy (toca uno para editarlo)</h2>
+  <div class="list" id="today-list"></div>
+  </section>
+
+  <section id="p-hist" hidden>
+  <h2>Por categoría (días anteriores)</h2>
   <div class="list" id="cats-sum"></div>
 
-  <h2>Gastos por día (toca uno para editarlo)</h2>
+  <h2>Gastos por día (días anteriores)</h2>
   <div class="list" id="list"></div>
+  </section>
 </main>
 
 <dialog id="cfg">
@@ -154,7 +170,7 @@ const dayLabel = ds => {
   return new Date(y, m - 1, d).toLocaleDateString(undefined, {weekday:'short', day:'numeric', month:'short'});
 };
 const curYM = () => today().slice(0, 7);
-let viewYM = curYM();
+let viewYM = curYM(), tab = 'hoy';
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
 const toast = t => { const e = $('#toast'); e.textContent = t; e.classList.add('show'); setTimeout(() => e.classList.remove('show'), 2200); };
 
@@ -168,19 +184,38 @@ function choices(box, name, values, checked) {
 }
 const val = name => document.querySelector('input[name=' + name + ']:checked').value;
 
+function rowEl(i) {
+  const r = document.createElement('button'); r.type = 'button'; r.className = 'row';
+  const a = document.createElement('span');
+  a.innerHTML = '<span></span><small></small>';
+  a.firstChild.textContent = i.note || i.category;
+  a.lastChild.textContent = i.category + ' · ' + i.method + ' · ' + i.date;
+  const b = document.createElement('b'); b.textContent = '$' + money(i.amount);
+  if (!i.synced) b.classList.add('pend');
+  r.append(a, b); r.onclick = () => openEdit(i);
+  return r;
+}
+
 function render() {
-  const ym = viewYM, [vy, vm] = ym.split('-');
+  const ym = viewYM, [vy, vm] = ym.split('-'), td = today();
   $('#month').textContent = new Date(+vy, +vm - 1, 1).toLocaleDateString(undefined, {month:'long', year:'numeric'});
   $('#next').disabled = ym >= curYM();
-  const inMonth = items.filter(i => !i.deleted && i.date.startsWith(ym)).sort((a, b) => b.date.localeCompare(a.date));
-  const sum = inMonth.reduce((t, i) => t + i.amount, 0);
-  $('#total').textContent = '$' + money(sum);
-  $('#today').textContent = '$' + money(items.filter(i => !i.deleted && i.date === today()).reduce((t, i) => t + i.amount, 0));
-  const by = {};
-  inMonth.forEach(i => { by[i.category] = (by[i.category] || 0) + i.amount; });
+  const add = (arr) => arr.reduce((t, i) => t + i.amount, 0);
+  const live = items.filter(i => !i.deleted);
+  $('#total').textContent = '$' + money(add(live.filter(i => i.date.startsWith(ym))));
+  const todays = live.filter(i => i.date === td);
+  $('#today').textContent = '$' + money(add(todays));
+
+  const tl = $('#today-list'); tl.innerHTML = '';
+  if (!todays.length) tl.innerHTML = '<div class="empty">Aún no hay gastos hoy.</div>';
+  todays.forEach(i => tl.appendChild(rowEl(i)));
+
+  const prev = live.filter(i => i.date.startsWith(ym) && i.date !== td).sort((a, b) => b.date.localeCompare(a.date));
+  const sum = add(prev), by = {};
+  prev.forEach(i => { by[i.category] = (by[i.category] || 0) + i.amount; });
   const cs = $('#cats-sum'); cs.innerHTML = '';
   const rows = Object.entries(by).sort((a, b) => b[1] - a[1]);
-  if (!rows.length) cs.innerHTML = '<div class="empty">Sin gastos en este mes.</div>';
+  if (!rows.length) cs.innerHTML = '<div class="empty">Sin gastos de días anteriores en este mes.</div>';
   rows.forEach(([c, v]) => {
     const pct = Math.round(v / sum * 100), d = document.createElement('div'); d.className = 'cs';
     d.innerHTML = '<div><span></span><b></b></div><div class="bar"><i></i></div>';
@@ -189,30 +224,24 @@ function render() {
     d.querySelector('i').style.width = pct + '%';
     cs.appendChild(d);
   });
+
   const list = $('#list'); list.innerHTML = '';
-  if (!inMonth.length) list.innerHTML = '<div class="empty">Sin gastos en este mes.</div>';
+  if (!prev.length) list.innerHTML = '<div class="empty">Sin gastos de días anteriores en este mes.</div>';
   let cur = '';
-  inMonth.forEach(i => {
+  prev.forEach(i => {
     if (i.date !== cur) {
       cur = i.date;
-      const g = inMonth.filter(x => x.date === cur), dc = {};
+      const g = prev.filter(x => x.date === cur), dc = {};
       g.forEach(x => { dc[x.category] = (dc[x.category] || 0) + x.amount; });
       const h = document.createElement('div'); h.className = 'day';
       h.innerHTML = '<span></span><b></b>';
       h.firstChild.textContent = dayLabel(cur);
-      h.lastChild.textContent = '$' + money(g.reduce((t, x) => t + x.amount, 0));
+      h.lastChild.textContent = '$' + money(add(g));
       const cl = document.createElement('div'); cl.className = 'dcat';
       cl.textContent = Object.entries(dc).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + ' $' + money(v)).join(' · ');
       list.append(h, cl);
     }
-    const r = document.createElement('button'); r.type = 'button'; r.className = 'row';
-    const a = document.createElement('span');
-    a.innerHTML = '<span></span><small></small>';
-    a.firstChild.textContent = i.note || i.category;
-    a.lastChild.textContent = i.category + ' · ' + i.method + ' · ' + i.date;
-    const b = document.createElement('b'); b.textContent = '$' + money(i.amount);
-    if (!i.synced) b.classList.add('pend');
-    r.append(a, b); r.onclick = () => openEdit(i); list.appendChild(r);
+    list.appendChild(rowEl(i));
   });
   const pending = items.filter(i => !i.synced).length, el = $('#sync');
   let s = 'ok', t = 'Todo sincronizado';
@@ -250,7 +279,7 @@ $('#f').addEventListener('submit', e => {
     note: $('#note').value.trim(), method: val('method'), createdAt: new Date().toISOString(), synced: false});
   store(K_ITEMS, items);
   $('#amount').value = ''; $('#note').value = ''; $('#date').value = today();
-  viewYM = items[0].date.slice(0, 7); render(); toast('Gasto guardado'); $('#amount').focus(); sync();
+  render(); toast(items[0].date === today() ? 'Gasto guardado' : 'Gasto guardado (míralo en Historial)'); $('#amount').focus(); sync();
 });
 
 const dlg = $('#cfg');
@@ -291,11 +320,21 @@ $('#edit-f').addEventListener('submit', e => {
   if (!(n > 0)) { e.preventDefault(); toast('Escribe un monto mayor a 0'); return; }
   Object.assign(editing, {amount: n, category: val('ecat'), note: $('#e-note').value.trim(), method: val('emethod'),
     date: $('#e-date').value || editing.date, synced: false, rev: (editing.rev || 0) + 1});
-  viewYM = editing.date.slice(0, 7); store(K_ITEMS, items); render(); toast('Cambios guardados'); sync();
+  if (tab === 'hist') viewYM = editing.date.slice(0, 7); store(K_ITEMS, items); render(); toast('Cambios guardados'); sync();
 });
 const shift = d => { const [y, m] = viewYM.split('-').map(Number); const t = new Date(y, m - 1 + d, 1); viewYM = t.getFullYear() + '-' + pad(t.getMonth() + 1); render(); };
 $('#prev').onclick = () => shift(-1);
 $('#next').onclick = () => shift(1);
+function setTab(t) {
+  tab = t;
+  $('#p-hoy').hidden = t !== 'hoy'; $('#p-hist').hidden = t !== 'hist';
+  $('#t-hoy').setAttribute('aria-selected', t === 'hoy'); $('#t-hist').setAttribute('aria-selected', t === 'hist');
+  if (t === 'hoy') viewYM = curYM();
+  $('#prev').hidden = $('#next').hidden = t === 'hoy';
+  render();
+}
+$('#t-hoy').onclick = () => setTab('hoy');
+$('#t-hist').onclick = () => setTab('hist');
 $('#sync').onclick = sync;
 addEventListener('online', sync); addEventListener('offline', render);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
@@ -305,7 +344,7 @@ choices($('#methods'), 'method', METHODS, METHODS[1]);
 choices($('#e-cats'), 'ecat', CATEGORIES);
 choices($('#e-methods'), 'emethod', METHODS);
 $('#date').value = today();
-render(); sync();
+setTab('hoy'); sync();
 if (!cfg.url) dlg.showModal();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 })();
