@@ -44,6 +44,10 @@ legend,.lbl{font-size:13px;color:var(--muted);margin-bottom:6px;padding:0}
 .primary{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:17px}
 .today{color:var(--muted);font-size:15px;margin-top:2px}
 .today b{color:var(--ink);font-variant-numeric:tabular-nums}
+.day{display:flex;justify-content:space-between;gap:12px;padding:16px 0 2px;font-weight:700}
+.day span{text-transform:capitalize}
+.day b{font-variant-numeric:tabular-nums}
+.dcat{color:var(--muted);font-size:13px;padding-bottom:4px}
 h2{font-size:15px;margin:26px 0 10px}
 .mnav{display:flex;align-items:center;gap:4px}
 .mnav .link{font-size:22px;line-height:1;padding:2px 8px}
@@ -95,7 +99,7 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
   <h2>Por categoría</h2>
   <div class="list" id="cats-sum"></div>
 
-  <h2>Gastos del mes (toca uno para editarlo)</h2>
+  <h2>Gastos por día (toca uno para editarlo)</h2>
   <div class="list" id="list"></div>
 </main>
 
@@ -141,6 +145,14 @@ let items = load(K_ITEMS, []), cfg = load(K_CFG, {url:'', token:''}), syncing = 
 const pad = n => String(n).padStart(2, '0');
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
 const money = n => n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+const dstr = off => { const d = new Date(); d.setDate(d.getDate() + off); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+const dayLabel = ds => {
+  if (ds === dstr(0)) return 'Hoy';
+  if (ds === dstr(-1)) return 'Ayer';
+  if (ds === dstr(-2)) return 'Anteayer';
+  const [y, m, d] = ds.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {weekday:'short', day:'numeric', month:'short'});
+};
 const curYM = () => today().slice(0, 7);
 let viewYM = curYM();
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -179,7 +191,20 @@ function render() {
   });
   const list = $('#list'); list.innerHTML = '';
   if (!inMonth.length) list.innerHTML = '<div class="empty">Sin gastos en este mes.</div>';
-  inMonth.slice(0, 50).forEach(i => {
+  let cur = '';
+  inMonth.forEach(i => {
+    if (i.date !== cur) {
+      cur = i.date;
+      const g = inMonth.filter(x => x.date === cur), dc = {};
+      g.forEach(x => { dc[x.category] = (dc[x.category] || 0) + x.amount; });
+      const h = document.createElement('div'); h.className = 'day';
+      h.innerHTML = '<span></span><b></b>';
+      h.firstChild.textContent = dayLabel(cur);
+      h.lastChild.textContent = '$' + money(g.reduce((t, x) => t + x.amount, 0));
+      const cl = document.createElement('div'); cl.className = 'dcat';
+      cl.textContent = Object.entries(dc).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + ' $' + money(v)).join(' · ');
+      list.append(h, cl);
+    }
     const r = document.createElement('button'); r.type = 'button'; r.className = 'row';
     const a = document.createElement('span');
     a.innerHTML = '<span></span><small></small>';
