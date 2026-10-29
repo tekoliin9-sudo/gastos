@@ -170,6 +170,15 @@ const dayLabel = ds => {
   const [y, m, d] = ds.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, {weekday:'short', day:'numeric', month:'short'});
 };
+const normDate = v => {
+  const t = String(v == null ? '' : v).trim();
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]);
+  m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return m[3] + '-' + pad(+m[2]) + '-' + pad(+m[1]);
+  const d = new Date(t);
+  return isNaN(d) ? t : d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+};
 const curYM = () => today().slice(0, 7);
 let viewYM = curYM(), tab = 'hoy';
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -254,15 +263,22 @@ function render() {
 }
 
 async function pull() {
-  if (!cfg.url) return 0;
+  if (!cfg.url) return null;
   const r = await fetch(cfg.url + (cfg.url.includes('?') ? '&' : '?') + 'action=list&token=' + encodeURIComponent(cfg.token));
   const d = await r.json();
   if (!d.ok || !Array.isArray(d.items)) throw new Error(d.error || 'Error');
-  const have = new Set(items.map(i => i.id));
-  const fresh = d.items.filter(i => !have.has(i.id)).map(i => Object.assign({}, i, {synced: true}));
-  if (fresh.length) { items = items.concat(fresh); store(K_ITEMS, items); }
-  render();
-  return fresh.length;
+  const byId = new Map(items.map(i => [i.id, i]));
+  const rows = d.items
+    .map(i => Object.assign({}, i, {date: normDate(i.date), amount: Number(String(i.amount).replace(/[^0-9.\-]/g, '')), synced: true}))
+    .filter(i => i.id && isFinite(i.amount));
+  rows.forEach(i => {
+    const l = byId.get(i.id);
+    if (!l) items.push(i);
+    else if (l.synced && !l.deleted) Object.assign(l, i);
+  });
+  store(K_ITEMS, items); render();
+  const ds = rows.map(i => i.date).sort();
+  return {n: rows.length, min: ds[0] || '', max: ds[ds.length - 1] || ''};
 }
 
 async function sync() {
@@ -354,8 +370,9 @@ $('#restore').onclick = async () => {
   cfg = {url: $('#url').value.trim(), token: $('#token').value.trim()}; store(K_CFG, cfg);
   m.textContent = 'Restaurando…';
   try {
-    const n = await pull();
-    m.textContent = n ? 'Se restauraron ' + n + ' gastos.' : 'No había gastos nuevos que restaurar.';
+    const r = await pull();
+    if (!r) { m.textContent = 'Falta la URL.'; return; }
+    m.textContent = r.n ? 'Se leyeron ' + r.n + ' gastos de la hoja (del ' + r.min + ' al ' + r.max + '). Fecha de este dispositivo: ' + today() + '.' : 'La hoja no tiene gastos.';
   } catch { m.textContent = 'No se pudo leer la hoja. Revisa la URL y el token, y que implementaste la última versión de Code.gs.'; }
 };
 $('#sync').onclick = sync;
