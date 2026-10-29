@@ -127,6 +127,7 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
     <div id="msg" role="status"></div>
     <div class="btns">
       <button type="button" id="test">Probar conexión</button>
+      <button type="button" id="restore">Restaurar desde la hoja</button>
       <button type="button" id="close">Cerrar</button>
       <button class="ok" type="submit">Guardar</button>
     </div>
@@ -252,6 +253,18 @@ function render() {
   el.dataset.s = s; $('#sync-t').textContent = t;
 }
 
+async function pull() {
+  if (!cfg.url) return 0;
+  const r = await fetch(cfg.url + (cfg.url.includes('?') ? '&' : '?') + 'action=list&token=' + encodeURIComponent(cfg.token));
+  const d = await r.json();
+  if (!d.ok || !Array.isArray(d.items)) throw new Error(d.error || 'Error');
+  const have = new Set(items.map(i => i.id));
+  const fresh = d.items.filter(i => !have.has(i.id)).map(i => Object.assign({}, i, {synced: true}));
+  if (fresh.length) { items = items.concat(fresh); store(K_ITEMS, items); }
+  render();
+  return fresh.length;
+}
+
 async function sync() {
   if (syncing || !cfg.url || !navigator.onLine) return render();
   syncing = true; failed = false;
@@ -287,7 +300,8 @@ $('#open-cfg').onclick = () => { $('#url').value = cfg.url; $('#token').value = 
 $('#close').onclick = () => dlg.close();
 $('#cfg-f').addEventListener('submit', () => {
   cfg = {url: $('#url').value.trim(), token: $('#token').value.trim()};
-  store(K_CFG, cfg); failed = false; render(); sync();
+  store(K_CFG, cfg); failed = false; render();
+  (items.length ? Promise.resolve() : pull().catch(() => {})).then(sync);
 });
 $('#test').onclick = async () => {
   const url = $('#url').value.trim(), tk = $('#token').value.trim(), m = $('#msg');
@@ -335,6 +349,15 @@ function setTab(t) {
 }
 $('#t-hoy').onclick = () => setTab('hoy');
 $('#t-hist').onclick = () => setTab('hist');
+$('#restore').onclick = async () => {
+  const m = $('#msg');
+  cfg = {url: $('#url').value.trim(), token: $('#token').value.trim()}; store(K_CFG, cfg);
+  m.textContent = 'Restaurando…';
+  try {
+    const n = await pull();
+    m.textContent = n ? 'Se restauraron ' + n + ' gastos.' : 'No había gastos nuevos que restaurar.';
+  } catch { m.textContent = 'No se pudo leer la hoja. Revisa la URL y el token, y que implementaste la última versión de Code.gs.'; }
+};
 $('#sync').onclick = sync;
 addEventListener('online', sync); addEventListener('offline', render);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
@@ -344,7 +367,8 @@ choices($('#methods'), 'method', METHODS, METHODS[1]);
 choices($('#e-cats'), 'ecat', CATEGORIES);
 choices($('#e-methods'), 'emethod', METHODS);
 $('#date').value = today();
-setTab('hoy'); sync();
+setTab('hoy');
+(cfg.url && !items.length ? pull().catch(() => {}) : Promise.resolve()).then(sync);
 if (!cfg.url) dlg.showModal();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 })();
