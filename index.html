@@ -94,6 +94,7 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
   <div class="tabs" role="tablist">
     <button type="button" role="tab" id="t-hoy" aria-selected="true">Hoy</button>
     <button type="button" role="tab" id="t-hist" aria-selected="false">Historial</button>
+    <button type="button" role="tab" id="t-res" aria-selected="false">Resumen</button>
   </div>
 
   <section id="p-hoy">
@@ -116,6 +117,14 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
 
   <h2>Gastos por día (días anteriores)</h2>
   <div class="list" id="list"></div>
+  </section>
+
+  <section id="p-res" hidden>
+  <h2>Por semana (lunes a domingo)</h2>
+  <div class="list" id="week-list"></div>
+
+  <h2>Por mes</h2>
+  <div class="list" id="month-list"></div>
   </section>
 </main>
 
@@ -253,6 +262,39 @@ function render() {
     }
     list.appendChild(rowEl(i));
   });
+  const ymd = dt => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+  const mon = ds => { const [y, m, d] = ds.split('-').map(Number); const dt = new Date(y, m - 1, d); dt.setDate(dt.getDate() - (dt.getDay() + 6) % 7); return dt; };
+  const fmt = dt => dt.toLocaleDateString(undefined, {day:'numeric', month:'short'});
+  const bars = (box, rws) => {
+    box.innerHTML = '';
+    if (!rws.length) { box.innerHTML = '<div class="empty">Aún no hay gastos.</div>'; return; }
+    const mx = Math.max(...rws.map(r => r.v)) || 1;
+    rws.forEach(r => {
+      const d = document.createElement('div'); d.className = 'cs';
+      d.innerHTML = '<div><span></span><b></b></div><div class="bar"><i></i></div>';
+      d.querySelector('span').textContent = r.label;
+      d.querySelector('b').textContent = '$' + money(r.v);
+      d.querySelector('i').style.width = Math.round(r.v / mx * 100) + '%';
+      box.appendChild(d);
+    });
+  };
+  const wsum = {}, msum = {};
+  live.forEach(i => {
+    const k = ymd(mon(i.date)); wsum[k] = (wsum[k] || 0) + i.amount;
+    const q = i.date.slice(0, 7); msum[q] = (msum[q] || 0) + i.amount;
+  });
+  const wrows = [], first = Object.keys(wsum).sort()[0];
+  for (let dt = mon(td), n = 0; first && ymd(dt) >= first && n < 12; dt.setDate(dt.getDate() - 7), n++) {
+    const end = new Date(dt); end.setDate(end.getDate() + 6);
+    wrows.push({label: (n === 0 ? 'Esta semana · ' : n === 1 ? 'Semana pasada · ' : '') + fmt(dt) + ' – ' + fmt(end), v: wsum[ymd(dt)] || 0});
+  }
+  const mrows = Object.keys(msum).sort().reverse().map(k => {
+    const [y, m] = k.split('-').map(Number);
+    const t = new Date(y, m - 1, 1).toLocaleDateString(undefined, {month:'long', year:'numeric'});
+    return {label: t.charAt(0).toUpperCase() + t.slice(1), v: msum[k]};
+  });
+  bars($('#week-list'), wrows); bars($('#month-list'), mrows);
+
   const pending = items.filter(i => !i.synced).length, el = $('#sync');
   let s = 'ok', t = 'Todo sincronizado';
   if (!cfg.url) { s = 'setup'; t = 'Configura la conexión'; }
@@ -357,14 +399,15 @@ $('#prev').onclick = () => shift(-1);
 $('#next').onclick = () => shift(1);
 function setTab(t) {
   tab = t;
-  $('#p-hoy').hidden = t !== 'hoy'; $('#p-hist').hidden = t !== 'hist';
-  $('#t-hoy').setAttribute('aria-selected', t === 'hoy'); $('#t-hist').setAttribute('aria-selected', t === 'hist');
-  if (t === 'hoy') viewYM = curYM();
-  $('#prev').hidden = $('#next').hidden = t === 'hoy';
+  $('#p-hoy').hidden = t !== 'hoy'; $('#p-hist').hidden = t !== 'hist'; $('#p-res').hidden = t !== 'res';
+  $('#t-hoy').setAttribute('aria-selected', t === 'hoy'); $('#t-hist').setAttribute('aria-selected', t === 'hist'); $('#t-res').setAttribute('aria-selected', t === 'res');
+  if (t !== 'hist') viewYM = curYM();
+  $('#prev').hidden = $('#next').hidden = t !== 'hist';
   render();
 }
 $('#t-hoy').onclick = () => setTab('hoy');
 $('#t-hist').onclick = () => setTab('hist');
+$('#t-res').onclick = () => setTab('res');
 $('#restore').onclick = async () => {
   const m = $('#msg');
   cfg = {url: $('#url').value.trim(), token: $('#token').value.trim()}; store(K_CFG, cfg);
