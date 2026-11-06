@@ -49,6 +49,14 @@ legend,.lbl{font-size:13px;color:var(--muted);margin-bottom:6px;padding:0}
 .day b{font-variant-numeric:tabular-nums}
 .dcat{color:var(--muted);font-size:13px;padding-bottom:4px}
 [hidden]{display:none!important}
+.bud{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin:0 0 16px}
+.bud-top{display:flex;justify-content:space-between;align-items:center;gap:12px;font-weight:600}
+.bud .bar{height:8px;margin:10px 0 8px}
+.bud-s{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+.bud-s.over{color:#D23B3B;font-weight:600}
+.bar i[data-s=warn]{background:var(--warn)}
+.bar i[data-s=over]{background:#D23B3B}
+.cs .dcat{margin-top:6px}
 .tabs{display:flex;gap:4px;padding:4px;margin-bottom:16px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
 .tabs button{flex:1;padding:10px;border:0;border-radius:9px;background:none;font-weight:600;color:var(--muted)}
 .tabs button[aria-selected=true]{background:var(--accent);color:var(--on-accent)}
@@ -90,6 +98,12 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
     <button class="link" id="open-cfg" type="button">Ajustes</button>
   </header>
   <button class="sync" id="sync" type="button" data-s="setup"><i></i><span id="sync-t">Configura la conexión</span></button>
+
+  <div class="bud" id="bud">
+    <div class="bud-top"><span id="bud-t"></span><button class="link" id="bud-edit" type="button">Editar</button></div>
+    <div class="bar"><i id="bud-bar"></i></div>
+    <div class="bud-s" id="bud-s"></div>
+  </div>
 
   <div class="tabs" role="tablist">
     <button type="button" role="tab" id="t-hoy" aria-selected="true">Hoy</button>
@@ -156,17 +170,27 @@ dialog p{color:var(--muted);font-size:14px;margin:0 0 14px}
     </div>
   </form>
 </dialog>
+<dialog id="bdlg">
+  <form method="dialog" id="bd-f">
+    <p id="bd-p"></p>
+    <label class="amount"><span>$</span><input id="bd-amount" inputmode="decimal" placeholder="0.00" aria-label="Presupuesto" required></label>
+    <div class="btns">
+      <button type="button" id="bd-cancel">Cancelar</button>
+      <button class="ok" type="submit">Guardar</button>
+    </div>
+  </form>
+</dialog>
 <div id="toast" role="status"></div>
 
 <script>
 (() => {
 const CATEGORIES = ['Comida','Transporte','Casa','Salud','Ocio','Compras','Servicios','Otros'];
 const METHODS = ['Efectivo','Tarjeta','Transferencia'];
-const K_ITEMS = 'gastos.items.v1', K_CFG = 'gastos.cfg.v1';
+const K_ITEMS = 'gastos.items.v1', K_CFG = 'gastos.cfg.v1', K_BUD = 'gastos.budgets.v1';
 const $ = s => document.querySelector(s);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
 const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-let items = load(K_ITEMS, []), cfg = load(K_CFG, {url:'', token:''}), syncing = false, failed = false;
+let budgets = load(K_BUD, []), items = load(K_ITEMS, []), cfg = load(K_CFG, {url:'', token:''}), syncing = false, failed = false;
 
 const pad = n => String(n).padStart(2, '0');
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
@@ -203,6 +227,10 @@ function choices(box, name, values, checked) {
 }
 const val = name => document.querySelector('input[name=' + name + ']:checked').value;
 
+function budgetFor(ym) {
+  return budgets.filter(b => b.month <= ym).sort((a, b) => b.month.localeCompare(a.month))[0] || null;
+}
+
 function rowEl(i) {
   const r = document.createElement('button'); r.type = 'button'; r.className = 'row';
   const a = document.createElement('span');
@@ -221,7 +249,24 @@ function render() {
   $('#next').disabled = ym >= curYM();
   const add = (arr) => arr.reduce((t, i) => t + i.amount, 0);
   const live = items.filter(i => !i.deleted);
-  $('#total').textContent = '$' + money(add(live.filter(i => i.date.startsWith(ym))));
+  const monthSum = add(live.filter(i => i.date.startsWith(ym)));
+  $('#total').textContent = '$' + money(monthSum);
+  const bd = budgetFor(ym), bt = new Date(+vy, +vm - 1, 1).toLocaleDateString(undefined, {month:'long'});
+  const bi = $('#bud-bar'), bs = $('#bud-s');
+  if (!bd) {
+    $('#bud-t').textContent = 'Define tu presupuesto de ' + bt;
+    $('#bud-edit').textContent = 'Definir';
+    bi.style.width = '0%'; bi.dataset.s = '';
+    bs.className = 'bud-s'; bs.textContent = 'Gastado en el mes: $' + money(monthSum);
+  } else {
+    const left = bd.amount - monthSum, pct = bd.amount > 0 ? monthSum / bd.amount * 100 : 100;
+    $('#bud-t').textContent = 'Presupuesto de ' + bt + ': $' + money(bd.amount);
+    $('#bud-edit').textContent = 'Editar';
+    bi.style.width = Math.min(100, pct) + '%';
+    bi.dataset.s = left < 0 ? 'over' : pct >= 80 ? 'warn' : '';
+    bs.className = 'bud-s' + (left < 0 ? ' over' : '');
+    bs.textContent = 'Gastado $' + money(monthSum) + (left < 0 ? ' · Te pasaste por $' + money(-left) : ' · Te quedan $' + money(left));
+  }
   const todays = live.filter(i => i.date === td);
   $('#today').textContent = '$' + money(add(todays));
 
@@ -275,18 +320,21 @@ function render() {
       d.querySelector('span').textContent = r.label;
       d.querySelector('b').textContent = '$' + money(r.v);
       d.querySelector('i').style.width = Math.round(r.v / mx * 100) + '%';
+      if (r.sub) { const s2 = document.createElement('div'); s2.className = 'dcat'; s2.textContent = r.sub; d.appendChild(s2); }
       box.appendChild(d);
     });
   };
-  const wsum = {}, msum = {};
+  const wsum = {}, msum = {}, wcat = {};
   live.forEach(i => {
     const k = ymd(mon(i.date)); wsum[k] = (wsum[k] || 0) + i.amount;
+    const wc = wcat[k] = wcat[k] || {}; wc[i.category] = (wc[i.category] || 0) + i.amount;
     const q = i.date.slice(0, 7); msum[q] = (msum[q] || 0) + i.amount;
   });
   const wrows = [], first = Object.keys(wsum).sort()[0];
   for (let dt = mon(td), n = 0; first && ymd(dt) >= first && n < 12; dt.setDate(dt.getDate() - 7), n++) {
     const end = new Date(dt); end.setDate(end.getDate() + 6);
-    wrows.push({label: (n === 0 ? 'Esta semana · ' : n === 1 ? 'Semana pasada · ' : '') + fmt(dt) + ' – ' + fmt(end), v: wsum[ymd(dt)] || 0});
+    wrows.push({label: (n === 0 ? 'Esta semana · ' : n === 1 ? 'Semana pasada · ' : '') + fmt(dt) + ' – ' + fmt(end), v: wsum[ymd(dt)] || 0,
+      sub: Object.entries(wcat[ymd(dt)] || {}).sort((a, b) => b[1] - a[1]).map(([c, v]) => c + ' $' + money(v)).join(' · ')});
   }
   const mrows = Object.keys(msum).sort().reverse().map(k => {
     const [y, m] = k.split('-').map(Number);
@@ -295,7 +343,7 @@ function render() {
   });
   bars($('#week-list'), wrows); bars($('#month-list'), mrows);
 
-  const pending = items.filter(i => !i.synced).length, el = $('#sync');
+  const pending = items.filter(i => !i.synced).length + budgets.filter(b => !b.synced).length, el = $('#sync');
   let s = 'ok', t = 'Todo sincronizado';
   if (!cfg.url) { s = 'setup'; t = 'Configura la conexión'; }
   else if (failed) { s = 'error'; t = 'Error al sincronizar · toca para reintentar'; }
@@ -318,6 +366,14 @@ async function pull() {
     if (!l) items.push(i);
     else if (l.synced && !l.deleted) Object.assign(l, i);
   });
+  if (Array.isArray(d.budgets)) {
+    d.budgets.forEach(b => {
+      const l = budgets.find(x => x.month === b.month), amount = Number(b.amount);
+      if (!l) budgets.push({month: b.month, amount, synced: true});
+      else if (l.synced) l.amount = amount;
+    });
+    store(K_BUD, budgets);
+  }
   store(K_ITEMS, items); render();
   const ds = rows.map(i => i.date).sort();
   return {n: rows.length, min: ds[0] || '', max: ds[ds.length - 1] || ''};
@@ -337,6 +393,16 @@ async function sync() {
       batch.forEach((i, k) => { if ((i.rev || 0) === revs[k]) i.synced = true; });
       items = items.filter(i => !(i.deleted && i.synced));
       store(K_ITEMS, items);
+    }
+    const pb = budgets.filter(b => !b.synced);
+    if (pb.length) {
+      const brevs = pb.map(b => b.rev || 0);
+      const res = await fetch(cfg.url, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({token: cfg.token, budgets: pb.map(b => ({month: b.month, amount: b.amount}))})});
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Error');
+      pb.forEach((b, k) => { if ((b.rev || 0) === brevs[k]) b.synced = true; });
+      store(K_BUD, budgets);
     }
   } catch (e) { failed = true; }
   syncing = false; render();
@@ -418,6 +484,22 @@ $('#restore').onclick = async () => {
     m.textContent = r.n ? 'Se leyeron ' + r.n + ' gastos de la hoja (del ' + r.min + ' al ' + r.max + '). Fecha de este dispositivo: ' + today() + '.' : 'La hoja no tiene gastos.';
   } catch { m.textContent = 'No se pudo leer la hoja. Revisa la URL y el token, y que implementaste la última versión de Code.gs.'; }
 };
+$('#bud-edit').onclick = () => {
+  const bd = budgetFor(viewYM), [y, m] = viewYM.split('-').map(Number);
+  const t = new Date(y, m - 1, 1).toLocaleDateString(undefined, {month:'long', year:'numeric'});
+  $('#bd-p').textContent = 'Presupuesto de ' + t + '. Los meses siguientes que no tengan monto propio usarán este.';
+  $('#bd-amount').value = bd ? bd.amount : '';
+  $('#bdlg').showModal();
+};
+$('#bd-cancel').onclick = () => $('#bdlg').close();
+$('#bd-f').addEventListener('submit', e => {
+  const n = Math.round(parseFloat(String($('#bd-amount').value).replace(',', '.')) * 100) / 100;
+  if (!(n > 0)) { e.preventDefault(); toast('Escribe un monto mayor a 0'); return; }
+  const cur = budgets.find(b => b.month === viewYM);
+  if (cur) { cur.amount = n; cur.synced = false; cur.rev = (cur.rev || 0) + 1; }
+  else budgets.push({month: viewYM, amount: n, synced: false});
+  store(K_BUD, budgets); render(); toast('Presupuesto guardado'); sync();
+});
 $('#sync').onclick = sync;
 addEventListener('online', sync); addEventListener('offline', render);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
